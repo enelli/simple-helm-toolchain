@@ -411,6 +411,7 @@ spec:
           value: $(params.cluster-name)
         - name: setup-script
           value: |
+            echo "APP_NAME=$(params.app-name)"
             export CLUSTER_NAMESPACE="$(params.dev-cluster-namespace)"
             export CHART_PATH="$(params.helm-chart-path)"
             export HELM_UPGRADE_EXTRA_ARGS="$(params.helm-upgrade-extra-args)"
@@ -437,10 +438,86 @@ spec:
             # This script checks the IBM Container Service cluster is ready, has a namespace configured with access to the private
             # image registry (using an IBM Cloud API Key), perform a kubectl deploy of container image and check on outcome.
             source <(curl -sSL "https://raw.githubusercontent.com/open-toolchain/commons/master/scripts/check_and_deploy_helm3.sh")
+
+            set -x
+            kubectl apply -f - <<EOD
+            ---
+            apiVersion: ibmcloud.ibm.com/v1alpha1
+            kind: Service
+            metadata:
+              name: cloudant-service
+            spec:
+              plan: standard
+              serviceClass: cloudantnosqldb
+            ---
+            apiVersion: ibmcloud.ibm.com/v1alpha1
+            kind: Binding
+            metadata:
+              name: cloudant-binding
+              namespace: default
+              annotations:
+                service.binding/url: path={.status.secretName},objectType=Secret,sourceValue=url
+                service.binding/host: path={.status.secretName},objectType=Secret,sourceValue=host
+                service.binding/iam_role_crn: path={.status.secretName},objectType=Secret,sourceValue=iam_role_crn
+                service.binding/apikey: path={.status.secretName},objectType=Secret,sourceValue=apikey
+                service.binding/port: path={.status.secretName},objectType=Secret,sourceValue=port
+                service.binding/iam_serviceid_crn: path={.status.secretName},objectType=Secret,sourceValue=iam_serviceid_crn
+                service.binding/iam_apikey_description: path={.status.secretName},objectType=Secret,sourceValue=iam_apikey_description
+                service.binding/username: path={.status.secretName},objectType=Secret,sourceValue=username
+                service.binding/iam_apikey_name: path={.status.secretName},objectType=Secret,sourceValue=iam_apikey_name
+                service.binding/password: path={.status.secretName},objectType=Secret,sourceValue=password
+            spec:
+              serviceName: cloudant-service
+            EOD
+
+            deploymentName=$(params.app-name)-deployment
+            
+            kubectl apply -f - <<EOD
+            apiVersion: binding.operators.coreos.com/v1alpha1
+            kind: ServiceBinding
+            metadata:
+              name: cloudant-service-binding
+              namespace: $(params.dev-cluster-namespace)
+            spec:
+              bindAsFiles: false
+              services:
+              - group: ibmcloud.ibm.com
+                version: v1
+                kind: Binding
+                name: cloudant-binding
+                id: tr
+              application:
+                name: $deploymentName
+                group: apps
+                version: v1
+                resource: deployments
+              mappings:
+                - name: APIKEY
+                  value: '{{ .tr.data.apikey }}'
+                - name: HOST
+                  value: '{{ .tr.data.host }}'
+                - name: IAM_APIKEY_DESCRIPTION
+                  value: '{{ .tr.data.iam_apikey_description }}'
+                - name: IAM_APIKEY_NAME
+                  value: '{{ .tr.data.iam_apikey_name }}'
+                - name: IAM_ROLE_CRN
+                  value: '{{ .tr.data.iam_role_crn }}'
+                - name: IAM_SERVICEID_CRN
+                  value: '{{ .tr.data.iam_serviceid_crn }}'
+                - name: URL
+                  value: '{{ .tr.data.url }}'
+                - name: USERNAME
+                  value: '{{ .tr.data.username }}'
+                - name: PASSWORD
+                  value: '{{ .tr.data.password }}'
+            EOD
         - name: post-execution-script
           value: |
             # Keep APP_URL in build.properties shuttle file
             echo "APP_URL=$APP_URL" >> build.properties
+        - name: service-binding-script
+          value: |
+            echo "TEST"
         - name: pipeline-debug
           value: $(params.pipeline-debug)
       workspaces:
