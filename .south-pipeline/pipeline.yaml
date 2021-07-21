@@ -515,9 +515,6 @@ spec:
           value: |
             # Keep APP_URL in build.properties shuttle file
             echo "APP_URL=$APP_URL" >> build.properties
-        - name: service-binding-script
-          value: |
-            echo "TEST"
         - name: pipeline-debug
           value: $(params.pipeline-debug)
       workspaces:
